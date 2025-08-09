@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>RunRecovery – Recuperação e Fortalecimento</title>
+<style>
+  :root{
+    --primary:#4F46E5;--primary-dark:#4338CA;--success:#10B981;--danger:#EF4444;--muted:#6B7280;--bg:#F3F4F6;--card:#FFFFFF;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:#111;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Ubuntu,'Helvetica Neue',Arial}
+  .container{max-width:980px;margin:24px auto;padding:16px}
+  header{background:var(--card);border-radius:16px;padding:20px 16px;box-shadow:0 6px 18px rgba(0,0,0,.06)}
+  h1{margin:0 0 6px;color:var(--primary)}
+  .sub{color:var(--muted);font-size:.95rem}
+  .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:12px}
+  .chip{background:#EEF2FF;color:#3730A3;border-radius:999px;padding:6px 10px;font-size:.85rem}
+  .switch{display:inline-flex;gap:8px;align-items:center}
+  .switch input{accent-color:var(--primary)}
+  .bar{width:100%;height:16px;background:#E5E7EB;border-radius:999px;overflow:hidden;margin-top:12px}
+  .bar>div{height:100%;background:var(--success);width:0%;color:#fff;font-weight:600;font-size:.8rem;display:flex;align-items:center;justify-content:center;transition:width .4s ease}
+
+  main{margin-top:18px}
+  .panel{background:var(--card);border-radius:16px;padding:16px;box-shadow:0 6px 18px rgba(0,0,0,.06)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+  .card{border:1px solid #E5E7EB;border-radius:14px;padding:12px;display:flex;gap:12px;transition:.2s;background:#fff}
+  .card.completed{background:#ECFDF5;border-color:#A7F3D0;outline:2px solid #6EE7B7}
+  .card img{width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid #E5E7EB}
+  .card h3{margin:0 0 4px;color:#111;font-size:1rem}
+  .muted{color:#6B7280;font-size:.9rem}
+  .track{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;align-items:center}
+  .track .input{display:flex;flex-direction:column;gap:4px}
+  .track input[type="text"]{width:110px;padding:8px;border:1px solid #D1D5DB;border-radius:8px}
+  .btn{border:none;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600}
+  .btn.primary{background:var(--primary);color:#fff}
+  .btn.primary:disabled{background:#c9c9ff;cursor:not-allowed}
+  .btn.ghost{background:#fff;border:1px solid #D1D5DB;color:#111}
+  .btn.danger{background:#fff;border:1px solid var(--danger);color:var(--danger)}
+  .center{text-align:center}
+  .info{padding:16px;border-radius:12px;background:#ECFEFF;border:1px solid #BAE6FD;color:#0C4A6E}
+  .success{padding:16px;border-radius:12px;background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46}
+  .warn{padding:16px;border-radius:12px;background:#FEF3C7;border:1px solid #FCD34D;color:#92400E}
+  .controls{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px}
+  .footer{margin-top:16px;display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}
+  .small{font-size:.85rem;color:#6B7280}
+  .range{display:flex;align-items:center;gap:8px}
+  input[type="range"]{width:220px}
+  @media (max-width:520px){.card{flex-direction:column;align-items:flex-start}.card img{width:100%;height:160px}}
+</style>
+</head>
+<body>
+  <div class="container">
+    <header aria-live="polite">
+      <h1>Meu Plano de Treino Diário</h1>
+      <div class="sub" id="plan-info">Carregando...</div>
+
+      <div class="row">
+        <span class="chip" id="week-chip">Semana –</span>
+        <div class="range" title="Dor do dia (0 sem dor – 10 pior dor)">
+          <label for="pain">Dor do dia:</label>
+          <input type="range" min="0" max="10" step="1" id="pain" aria-label="Nível de dor do dia">
+          <span id="pain-val" class="chip">0/10</span>
+        </div>
+        <label class="switch" title="Avançar automaticamente ao concluir/descanso">
+          <input type="checkbox" id="auto-advance">
+          <span>Auto‑avançar</span>
+        </label>
+        <button class="btn ghost" id="export">Exportar CSV</button>
+      </div>
+
+      <div class="bar" aria-hidden="true"><div id="progress-bar">0%</div></div>
+    </header>
+
+    <main id="daily-workout" class="panel" aria-live="polite"></main>
+
+    <div class="panel footer">
+      <div class="controls">
+        <button class="btn ghost" id="prev-day">◀️ Dia anterior</button>
+        <button class="btn primary" id="next-day">Dia seguinte ▶️</button>
+        <button class="btn danger" id="reset-progress">Reiniciar Progresso</button>
+      </div>
+      <div class="small" id="safety-note">Regra de segurança ativa: se dor &gt; 2/10, exercícios pliométricos serão substituídos.</div>
+    </div>
+  </div>
+
+<script>
+/* ====================== DADOS DE EXERCÍCIOS ====================== */
+const exerciseDB = {
+  // Mobilidade / alongamentos
+  'alongamento-adutor': { name:'Alongamento de Adutor (Borboleta)', group:'mobilidade',
+    image:'https://via.placeholder.com/200x200.png?text=Alongamento+Adutor',
+    desc:'Sente-se, junte as solas dos pés e aproxime os calcanhares. Incline o tronco suavemente à frente, sem dor.' },
+  'alongamento-flexor': { name:'Alongamento Flexor do Quadril', group:'mobilidade',
+    image:'https://via.placeholder.com/200x200.png?text=Alongamento+Flexor',
+    desc:'Em meio‑ajoelhado, incline a pelve para trás e leve o tronco levemente à frente até sentir alongar na frente do quadril.' },
+  'gato-camelo': { name:'Mobilidade Coluna (Gato-Camelo)', group:'mobilidade',
+    image:'https://via.placeholder.com/200x200.png?text=Gato+Camel0',
+    desc:'Em 4 apoios, alterne entre flexão e extensão da coluna, controlando a respiração.' },
+
+  // Força/isometria segura
+  'ponte-isometrica': { name:'Ponte Isométrica', group:'forca',
+    image:'https://via.placeholder.com/200x200.png?text=Ponte+Isometrica',
+    desc:'Deitado, joelhos dobrados. Eleve o quadril até alinhar ombros‑quadris‑joelhos. Sustente sem dor.' },
+  'ponte-unilateral': { name:'Ponte Unilateral (Isométrica)', group:'forca',
+    image:'https://via.placeholder.com/200x200.png?text=Ponte+Unilateral',
+    desc:'Como a ponte, mas sustentando com uma perna, a outra elevada. Manter pelve estável.' },
+  'aducao-cinta': { name:'Adução de Quadril com Elástico', group:'forca',
+    image:'https://via.placeholder.com/200x200.png?text=Aducao+Elastico',
+    desc:'Elástico no tornozelo. Cruze a perna à frente da outra, com controle. Retorne devagar.' },
+  'abducao-cinta': { name:'Abdução de Quadril com Elástico', group:'forca',
+    image:'https://via.placeholder.com/200x200.png?text=Abducao+Elastico',
+    desc:'Elástico no tornozelo. Afaste a perna para fora, mantendo tronco estável.' },
+  'clamshell': { name:'Clamshell (Abdução em Decúbito Lateral)', group:'forca',
+    image:'https://via.placeholder.com/200x200.png?text=Clamshell',
+    desc:'Deitado de lado, joelhos dobrados. Abra o joelho superior sem rodar a pelve.' },
+  'wall-sit': { name:'Cadeira na Parede (Wall Sit)', group:'forca',
+    image:'https://via.placeholder.com/200x200.png?text=Wall+Sit',
+    desc:'Encoste as costas na parede, desça até ~90°. Sustente sem dor anterior no joelho.' },
+  'step-up': { name:'Step-up Baixo', group:'forca',
+    image:'https://via.placeholder.com/200x200.png?text=Step+Up',
+    desc:'Suba em degrau baixo com controle; desça devagar. Atenção ao alinhamento de joelho/pé.' },
+  'dead-bug': { name:'Dead Bug', group:'core',
+    image:'https://via.placeholder.com/200x200.png?text=Dead+Bug',
+    desc:'Deitado, braços ao teto e quadris/joelhos a 90°. Estenda braço/perna opostos sem tirar lombar do chão.' },
+  'prancha-frontal': { name:'Prancha Frontal', group:'core',
+    image:'https://via.placeholder.com/200x200.png?text=Prancha',
+    desc:'Apoie antebraços e pontas dos pés. Mantenha corpo reto e abdome ativo.' },
+
+  // Pliometria (substituída se dor>2)
+  'agachamento-salto': { name:'Agachamento com Salto', group:'pliometria',
+    image:'https://via.placeholder.com/200x200.png?text=Agacho+com+Salto',
+    desc:'Agache e salte de forma suave, aterrissando com absorção e controle.' },
+  'salto-lateral': { name:'Saltos Laterais (Skater hop)', group:'pliometria',
+    image:'https://via.placeholder.com/200x200.png?text=Saltos+Laterais',
+    desc:'Saltos de um lado ao outro, pousando em um pé e estabilizando antes do próximo.' }
+};
+
+// Pool para completar dias com menos de 4 exercícios (rodízio)
+const fillerPool = [
+  { id:'clamshell', reps:'3x 12' },
+  { id:'dead-bug', reps:'3x 10' },
+  { id:'wall-sit', reps:'3x 30s' },
+  { id:'alongamento-flexor', reps:'3x 30s' },
+  { id:'gato-camelo', reps:'2x 10' },
+  { id:'ponte-unilateral', reps:'3x 20s cada' }
+];
+let fillerIdx = 0;
+
+/* ====================== PLANO BASE (pode ter <4) ====================== */
+const basePlan = {
+  // Semana 1 – Mobilidade/Ativação
+  1: [ {id:'alongamento-adutor',reps:'3x 30s'}, {id:'ponte-isometrica',reps:'3x 45s'}, {id:'dead-bug',reps:'3x 10'} ],
+  2: [ {id:'prancha-frontal',reps:'3x 30s'}, {id:'ponte-isometrica',reps:'3x 45s'}, {id:'clamshell',reps:'3x 12'} ],
+  3: [ {id:'alongamento-adutor',reps:'3x 30s'}, {id:'ponte-isometrica',reps:'3x 60s'}, {id:'dead-bug',reps:'3x 10'} ],
+  4: 'descanso',
+  5: [ {id:'prancha-frontal',reps:'3x 45s'}, {id:'ponte-isometrica',reps:'4x 45s'}, {id:'aducao-cinta',reps:'3x 12'} ],
+  6: [ {id:'alongamento-adutor',reps:'3x 45s'}, {id:'prancha-frontal',reps:'3x 45s'}, {id:'abducao-cinta',reps:'3x 12'} ],
+  7: 'descanso',
+  // Semana 2 – Fortalecimento
+  8: [ {id:'aducao-cinta',reps:'3x 12'}, {id:'abducao-cinta',reps:'3x 12'}, {id:'ponte-isometrica',reps:'3x 60s'} ],
+  9: [ {id:'prancha-frontal',reps:'3x 60s'}, {id:'alongamento-adutor',reps:'3x 45s'}, {id:'dead-bug',reps:'3x 10'} ],
+ 10: [ {id:'aducao-cinta',reps:'3x 15'}, {id:'abducao-cinta',reps:'3x 15'}, {id:'ponte-isometrica',reps:'4x 60s'} ],
+ 11: 'descanso',
+ 12: [ {id:'prancha-frontal',reps:'4x 60s'}, {id:'aducao-cinta',reps:'4x 12'}, {id:'abducao-cinta',reps:'4x 12'} ],
+ 13: [ {id:'alongamento-adutor',reps:'3x 60s'}, {id:'ponte-isometrica',reps:'4x 60s'}, {id:'wall-sit',reps:'3x 30s'} ],
+ 14: 'descanso',
+  // Semana 3 – Progressão (pliometria leve)
+ 15: [ {id:'agachamento-salto',reps:'3x 8'}, {id:'aducao-cinta',reps:'3x 15'}, {id:'abducao-cinta',reps:'3x 15'} ],
+ 16: [ {id:'prancha-frontal',reps:'3x 75s'}, {id:'salto-lateral',reps:'3x 10'}, {id:'dead-bug',reps:'3x 12'} ],
+ 17: [ {id:'agachamento-salto',reps:'3x 10'}, {id:'aducao-cinta',reps:'4x 15'}, {id:'abducao-cinta',reps:'4x 15'} ],
+ 18: 'descanso',
+ 19: [ {id:'salto-lateral',reps:'3x 12'}, {id:'prancha-frontal',reps:'4x 75s'}, {id:'clamshell',reps:'3x 15'} ],
+ 20: [ {id:'agachamento-salto',reps:'4x 10'}, {id:'ponte-isometrica',reps:'4x 75s'}, {id:'step-up',reps:'3x 10'} ],
+ 21: 'descanso',
+  // Semana 4 – Fortalecimento e Potência
+ 22: [ {id:'agachamento-salto',reps:'4x 12'}, {id:'salto-lateral',reps:'4x 12'}, {id:'aducao-cinta',reps:'4x 15'} ],
+ 23: [ {id:'prancha-frontal',reps:'3x 90s'}, {id:'abducao-cinta',reps:'4x 15'}, {id:'dead-bug',reps:'3x 12'} ],
+ 24: [ {id:'agachamento-salto',reps:'4x 15'}, {id:'salto-lateral',reps:'4x 15'}, {id:'ponte-isometrica',reps:'3x 90s'} ],
+ 25: 'descanso',
+ 26: [ {id:'aducao-cinta',reps:'4x 20'}, {id:'abducao-cinta',reps:'4x 20'}, {id:'prancha-frontal',reps:'4x 90s'} ],
+ 27: [ {id:'agachamento-salto',reps:'5x 12'}, {id:'salto-lateral',reps:'5x 12'}, {id:'step-up',reps:'3x 12'} ],
+ 28: 'descanso'
+};
+
+// IDs de pliometria para regras de segurança
+const plyoIDs = new Set(['agachamento-salto','salto-lateral']);
+
+// Alternativas seguras quando dor>2
+const safeSwap = {
+  'agachamento-salto': { id:'wall-sit', reps:'3x 30–45s' },
+  'salto-lateral': { id:'ponte-unilateral', reps:'3x 20–30s cada' }
+};
+
+/* ====================== ESTADO ====================== */
+let state = {
+  currentDay: 1,
+  progress: {},   // { day: { exerciseId: '3x12', ... } }
+  pain: {},       // { day: 0..10 }
+  autoAdvance: true
+};
+
+/* ====================== STORAGE ====================== */
+function saveData(){ localStorage.setItem('runRecoveryProgress', JSON.stringify(state)); }
+function loadData(){
+  try{
+    const raw = localStorage.getItem('runRecoveryProgress');
+    if(raw){ state = JSON.parse(raw); }
+  }catch(e){
+    console.warn('Storage corrompido. Reiniciando.', e);
+    localStorage.removeItem('runRecoveryProgress');
+    state = { currentDay:1, progress:{}, pain:{}, autoAdvance:true };
+  }
+}
+
+/* ====================== HELPERS ====================== */
+function isPlanFinished(){ return state.currentDay>28; }
+function weekOf(day){ return Math.ceil(day/7); }
+
+function applySafetyAndFill(dayArr){
+  // 1) Aplica regra de dor -> troca pliometria se dor > 2
+  const painToday = state.pain[state.currentDay] ?? 0;
+  let adjusted = dayArr.map(ex=>{
+    if(painToday>2 && plyoIDs.has(ex.id)){
+      return { ...safeSwap[ex.id] };
+    }
+    return ex;
+  });
+
+  // 2) Garante mínimo de 4 exercícios (completa com fillerPool em rodízio)
+  while(adjusted.length<4){
+    adjusted.push(fillerPool[fillerIdx % fillerPool.length]);
+    fillerIdx++;
+  }
+  return adjusted;
+}
+
+function getTodayWorkout(){
+  const base = basePlan[state.currentDay];
+  if(!base || base==='descanso') return base;
+  return applySafetyAndFill([...base]); // cópia
+}
+
+function updateHeaderInfo(){
+  const planInfo = document.getElementById('plan-info');
+  const weekChip = document.getElementById('week-chip');
+  if(isPlanFinished()){
+    planInfo.textContent = 'Plano concluído! 🎉';
+    weekChip.textContent = `Fim`;
+  }else{
+    planInfo.textContent = `Semana ${weekOf(state.currentDay)} de 4 — Dia ${state.currentDay}`;
+    weekChip.textContent = `Semana ${weekOf(state.currentDay)}`;
+  }
+}
+
+function updateProgressBarCustom(text, pct){
+  const bar = document.getElementById('progress-bar');
+  bar.style.width = pct+'%';
+  bar.textContent = text;
+}
+
+function updateProgressBar(){
+  const today = getTodayWorkout();
+  if(today==='descanso'){ updateProgressBarCustom('Descanso',100); return; }
+  if(isPlanFinished()){ updateProgressBarCustom('Concluído',100); return; }
+
+  const doneMap = state.progress[state.currentDay] || {};
+  const done = Object.keys(doneMap).length;
+  const total = today.length;
+  const pct = Math.round( (done/total)*100 );
+  updateProgressBarCustom(pct+'%', pct);
+}
+
+/* ====================== RENDER ====================== */
+function renderWorkout(){
+  const root = document.getElementById('daily-workout');
+  root.innerHTML = '';
+  updateHeaderInfo();
+
+  // Header controls state
+  document.getElementById('auto-advance').checked = !!state.autoAdvance;
+  const painRange = document.getElementById('pain');
+  painRange.value = state.pain[state.currentDay] ?? 0;
+  document.getElementById('pain-val').textContent = `${painRange.value}/10`;
+
+  if(isPlanFinished()){
+    root.innerHTML = `
+      <div class="success center">Você finalizou os 28 dias do plano. Excelente trabalho! 🎉</div>
+      <div class="controls" style="margin-top:12px">
+        <button class="btn primary" onclick="resetPlan()">Reiniciar do Dia 1</button>
+      </div>`;
+    updateProgressBar();
+    syncNav();
+    return;
+  }
+
+  const today = getTodayWorkout();
+  if(today==='descanso'){
+    root.innerHTML = `
+      <div class="info">
+        <strong>Hoje é dia de descanso.</strong> A recuperação é parte do treino. Alongamento leve e sono de qualidade recomendados.
+      </div>
+      <div class="controls" style="margin-top:10px">
+        <button class="btn primary" onclick="goNextDay()">Avançar para o próximo dia</button>
+      </div>`;
+    updateProgressBar();
+    if(state.autoAdvance){ setTimeout(()=>{goNextDay()}, 5000); }
+    syncNav();
+    return;
+  }
+
+  // Se dor alta, exibir aviso
+  const painToday = state.pain[state.currentDay] ?? 0;
+  if(painToday>2){
+    const warn = document.createElement('div');
+    warn.className='warn';
+    warn.innerHTML = `Dor atual: <strong>${painToday}/10</strong>. Exercícios pliométricos foram <strong>substituídos</strong> por opções seguras para proteger o adutor/joelho.`;
+    root.appendChild(warn);
+  }
+
+  const grid = document.createElement('div');
+  grid.className='grid';
+  root.appendChild(grid);
+
+  const doneMap = state.progress[state.currentDay] || {};
+
+  today.forEach((ex, idx)=>{
+    const data = exerciseDB[ex.id];
+    const isDone = !!doneMap[ex.id];
+    const card = document.createElement('div');
+    card.className = 'card'+(isDone?' completed':'');
+
+    card.innerHTML = `
+      <img src="${data?.image || 'https://via.placeholder.com/200'}"
+           alt="${(data?.name||'Exercício')} — ${(data?.desc||'')}" />
+      <div style="flex:1">
+        <h3>${data?.name || ex.id}</h3>
+        <div class="muted">${data?.desc || ''}</div>
+        <div class="track">
+          <div class="input">
+            <label>Previsto</label>
+            <input type="text" value="${ex.reps}" disabled>
+          </div>
+          <div class="input">
+            <label for="realizado-${idx}">Realizado</label>
+            <input type="text" id="realizado-${idx}" placeholder="Ex: 3x12 ou 3x 30s" value="${isDone? doneMap[ex.id]:''}" ${isDone?'disabled':''}>
+          </div>
+          <button class="btn primary" data-ex="${ex.id}" data-input="realizado-${idx}" ${isDone?'disabled':''}
+            aria-label="Concluir exercício ${data?.name||ex.id}">Concluir</button>
+          <button class="btn ghost" data-undo="${ex.id}" ${isDone?'':'disabled'} aria-label="Desfazer exercício ${data?.name||ex.id}">Desfazer</button>
+        </div>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+
+  // Listeners
+  root.querySelectorAll('button[data-ex]').forEach(btn=>{
+    btn.addEventListener('click', handleCompleteExercise);
+  });
+  root.querySelectorAll('button[data-undo]').forEach(btn=>{
+    btn.addEventListener('click', handleUndoExercise);
+  });
+
+  updateProgressBar();
+  maybeAutoAdvanceWhenAllDone();
+  syncNav();
+}
+
+function maybeAutoAdvanceWhenAllDone(){
+  const today = getTodayWorkout();
+  if(today==='descanso' || isPlanFinished()) return;
+
+  const doneMap = state.progress[state.currentDay] || {};
+  const allDone = Object.keys(doneMap).length >= today.length;
+  if(allDone){
+    const root = document.getElementById('daily-workout');
+    const msg = document.createElement('div');
+    msg.className='success center'; msg.style.marginTop='12px';
+    msg.textContent='Parabéns! Você concluiu o treino de hoje.';
+    root.appendChild(msg);
+    if(state.autoAdvance){ setTimeout(()=>{goNextDay()}, 5000); }
+  }
+}
+
+/* ====================== AÇÕES ====================== */
+function handleCompleteExercise(e){
+  const btn = e.currentTarget;
+  const exId = btn.dataset.ex;
+  const inputId = btn.dataset.input;
+  const input = document.getElementById(inputId);
+  const value = (input.value||'').trim();
+
+  // Validação simples: "3x12", "3x 30s", "4x90s", "3x 20–30s"
+  const pattern = /^\s*\d+\s*x\s*[\d]+(\s*(s|seg|reps|rep|m|min))?(\s*[\-\–]\s*[\d]+(\s*(s|seg|reps|rep|m|min))?)?\s*$/i;
+  if(!pattern.test(value)){
+    alert('Use o formato ex.: 3x12, 3x 30s ou 3x 20–30s');
+    return;
+  }
+
+  if(!state.progress[state.currentDay]) state.progress[state.currentDay] = {};
+  state.progress[state.currentDay][exId] = value;
+  saveData();
+  renderWorkout();
+}
+
+function handleUndoExercise(e){
+  const exId = e.currentTarget.dataset.undo;
+  if(state.progress[state.currentDay] && state.progress[state.currentDay][exId]){
+    delete state.progress[state.currentDay][exId];
+    if(Object.keys(state.progress[state.currentDay]).length===0){
+      delete state.progress[state.currentDay];
+    }
+    saveData();
+    renderWorkout();
+  }
+}
+
+function goPrevDay(){ if(state.currentDay>1){ state.currentDay--; saveData(); renderWorkout(); } }
+function goNextDay(){ if(state.currentDay<29){ state.currentDay++; saveData(); renderWorkout(); } }
+function resetPlan(){
+  if(confirm('Apagar todo o progresso e voltar ao Dia 1?')){
+    localStorage.removeItem('runRecoveryProgress');
+    state = { currentDay:1, progress:{}, pain:{}, autoAdvance:true };
+    renderWorkout();
+  }
+}
+
+/* ====================== CSV ====================== */
+function exportCSV(){
+  const rows = [['Dia','Exercício','Previsto','Realizado','Dor']];
+  for(let day=1; day<=28; day++){
+    const plan = basePlan[day];
+    const pain = state.pain[day] ?? '';
+    if(plan==='descanso'){ rows.push([day,'Descanso','','',pain]); continue; }
+    const today = applySafetyAndFill(plan? [...plan]:[]);
+    const doneMap = state.progress[day] || {};
+    today.forEach(ex=>{
+      const data = exerciseDB[ex.id];
+      rows.push([day, data?.name||ex.id, ex.reps, doneMap[ex.id]||'', pain]);
+    });
+  }
+  const csv = rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'runrecovery_progresso.csv';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+/* ====================== NAV / CONTROLES ====================== */
+function syncNav(){
+  document.getElementById('prev-day').disabled = state.currentDay<=1;
+  document.getElementById('next-day').disabled = state.currentDay>=28;
+}
+
+/* ====================== INIT ====================== */
+document.getElementById('prev-day').addEventListener('click', goPrevDay);
+document.getElementById('next-day').addEventListener('click', goNextDay);
+document.getElementById('reset-progress').addEventListener('click', resetPlan);
+document.getElementById('export').addEventListener('click', exportCSV);
+document.getElementById('auto-advance').addEventListener('change', (e)=>{
+  state.autoAdvance = !!e.target.checked; saveData();
+});
+document.getElementById('pain').addEventListener('input', (e)=>{
+  const v = Number(e.target.value);
+  state.pain[state.currentDay] = v;
+  document.getElementById('pain-val').textContent = `${v}/10`;
+  saveData();
+  // re-renderiza para aplicar trocas de segurança em tempo real
+  renderWorkout();
+});
+
+loadData();
+renderWorkout();
+</script>
+</body>
+</html>
